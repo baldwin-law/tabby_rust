@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use async_channel::{Receiver, Sender};
 use russh::client;
 use russh::keys::agent::AgentIdentity;
+use russh::keys::agent::client::{AgentClient, AgentStream};
 use russh::keys::{
     HashAlg, PrivateKeyWithHashAlg, PublicKey, check_known_hosts_path, load_secret_key,
 };
@@ -220,8 +221,33 @@ async fn try_private_keys(
     Err(last_error)
 }
 
+type DynamicAgentClient = AgentClient<Box<dyn AgentStream + Send + Unpin>>;
+
+#[cfg(unix)]
+async fn connect_agent() -> Result<DynamicAgentClient, String> {
+    AgentClient::connect_env()
+        .await
+        .map(AgentClient::dynamic)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(windows)]
+async fn connect_agent() -> Result<DynamicAgentClient, String> {
+    let pipe =
+        std::env::var_os("SSH_AUTH_SOCK").unwrap_or_else(|| r"\\.\pipe\openssh-ssh-agent".into());
+    AgentClient::connect_named_pipe(pipe)
+        .await
+        .map(AgentClient::dynamic)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn connect_agent() -> Result<DynamicAgentClient, String> {
+    Err("SSH agent authentication is not supported on this platform".into())
+}
+
 async fn try_agent(handle: &mut client::Handle<ClientHandler>, user: &str) -> Result<(), String> {
-    let mut agent = russh::keys::agent::client::AgentClient::connect_env()
+    let mut agent = connect_agent()
         .await
         .map_err(|error| format!("could not connect to SSH agent: {error}"))?;
     let identities = agent
@@ -308,7 +334,7 @@ async fn authenticate(
     {
         return Ok(());
     }
-    if std::env::var_os("SSH_AUTH_SOCK").is_some()
+    if (cfg!(windows) || std::env::var_os("SSH_AUTH_SOCK").is_some())
         && attempt("agent", try_agent(handle, &options.user).await).is_ok()
     {
         return Ok(());
