@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tabby Rust
+GenericName=Terminal Emulator
+Comment=Terminal emulator, profile manager and SSH client
+Exec=tabby-rust
+Icon=tabby-rust
+Terminal=false
+Categories=System;TerminalEmulator;Network;
+Keywords=terminal;shell;console;ssh;telnet;tabby;
+StartupNotify=true
+StartupWMClass=tabby-rust
